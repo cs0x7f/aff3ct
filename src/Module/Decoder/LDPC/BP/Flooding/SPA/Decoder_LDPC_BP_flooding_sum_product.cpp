@@ -63,41 +63,54 @@ void Decoder_LDPC_BP_flooding_sum_product<B,R>
 		V_to_C_ptr += length; // jump to the next node
 	}
 
+	mipp::Reg<R> r_temp;
+	const mipp::Reg<R> r_1 = 1.0;
+
+	// for (auto i = 0; i < this->n_branches; i++) {
+	// 	C_to_V[i] = (R) std::tanh(V_to_C[i] * (R) 0.5);
+	// }
+	// tanh(1/2 * t) = (exp(t) - 1) / (exp(t) + 1)
+	for (auto i = 0; i < this->n_branches; i += mipp::N<R>()) {
+		r_temp = &V_to_C[i];
+		r_temp = mipp::exp(r_temp);
+		r_temp = mipp::div(r_temp - r_1, r_temp + r_1);
+		r_temp.storeu(&C_to_V[i]);
+	}
+
 	auto transpose_ptr = this->transpose.data();
 	for (auto i = 0; i < this->n_C_nodes; i++)
 	{
 		const auto length = this->n_variables_per_parity[i];
 
-		auto sign =    0;
 		auto prod = (R)1;
 
 		// accumulate the incoming information in CN
 		for (auto j = 0; j < length; j++)
 		{
-			const auto value  = V_to_C[transpose_ptr[j]];
-			const auto v_abs  = (R)std::abs(value);
-			const auto res    = (R)std::tanh(v_abs * (R)0.5);
-			const auto c_sign = std::signbit((float)value) ? -1 : 0;
-
-			sign ^= c_sign;
-			prod  *= res;
-			values[j] = res;
+			values[j] = C_to_V[transpose_ptr[j]];
+			prod *= values[j];
 		}
 
 		// regenerate the CN outcoming values
 		for (auto j = 0; j < length; j++)
 		{
-			const auto value = V_to_C[transpose_ptr[j]];
-			const auto v_sig = sign ^ (std::signbit((float)value) ? -1 : 0);
-			      auto val   = prod / values[j];
-			           val   = (val < (R)1.0) ? val : (R)1.0 - std::numeric_limits<R>::epsilon();
-			const auto v_tan = (R)2.0 * std::atanh(val);
-			const auto v_res = (R)std::copysign(v_tan, v_sig);
-
-			C_to_V[transpose_ptr[j]] = v_res;
+			auto val   = prod / values[j];
+			     val   = (std::abs(val) < (R)1.0) ? val : ((R)1.0 - std::numeric_limits<R>::epsilon()) * (val > 0 ? 1 : -1);
+			C_to_V[transpose_ptr[j]] = (R) val;
 		}
 
 		transpose_ptr += length;
+	}
+
+	// for (auto i = 0; i < this->n_branches; i++) {
+	// 	C_to_V[i] = (R) (2.0 * std::atanh(C_to_V[i]));
+	// }
+	// 2 * atanh(t) = log((1 + t) / (1 - t)
+	for (auto i = 0; i < this->n_branches; i += mipp::N<R>()) {
+		r_temp = &C_to_V[i];
+		r_temp = mipp::div(r_1 + r_temp, r_1 - r_temp);
+		r_temp = mipp::log(r_temp);
+		r_temp.storeu(&C_to_V[i]);
 	}
 }
 

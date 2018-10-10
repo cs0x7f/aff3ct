@@ -2,6 +2,7 @@
 #define DECODER_LDPC_BP_FLOODING_SUM_PRODUCT_HPP_
 
 #include "../Decoder_LDPC_BP_flooding.hpp"
+#include <mipp.h>
 
 namespace aff3ct
 {
